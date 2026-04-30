@@ -80,6 +80,19 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
     return True
 
+    async def clear_chat(call: ServiceCall):
+    hass.data[DOMAIN]["messages"] = []
+
+    await save()
+
+    hass.bus.async_fire(
+        EVENT_HISTORY,
+        {"messages": []},
+        context=Context(user_id=None)
+    )
+
+    hass.services.async_register(DOMAIN, SERVICE_CLEAR_CHAT, clear_chat)
+
 
 async def async_unload_entry(hass: HomeAssistant, entry):
     """Unload integration."""

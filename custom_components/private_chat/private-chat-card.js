@@ -203,4 +203,4 @@ class HaChatCard extends HTMLElement {
     getCardSize() { return 6; }
 }
 
-customElements.define('ha-chat-card', HaChatCard);
+customElements.define('private-chat-card', HaChatCard);

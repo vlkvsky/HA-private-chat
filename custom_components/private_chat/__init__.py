@@ -2,18 +2,16 @@ import logging
 import time
 import asyncio
 
-from homeassistant.core import HomeAssistant, ServiceCall, Context
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.storage import Store
 
 from .const import *
 
 _LOGGER = logging.getLogger(__name__)
-
 LOCK = asyncio.Lock()
 
 
 async def async_setup(hass: HomeAssistant, config):
-    """Legacy support (YAML disabled style integration)."""
     return True
 
 
@@ -33,7 +31,6 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     async def save():
         await store.async_save({"messages": hass.data[DOMAIN]["messages"]})
 
-    # 🔥 SEND MESSAGE
     async def send_message(call: ServiceCall):
         text = call.data.get("message")
         if not text:
@@ -65,36 +62,33 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
         hass.bus.async_fire(
             EVENT_NEW_MESSAGE,
-            {"message": msg}
+            {"message": msg},
         )
 
-    # 🔥 HISTORY
     async def get_history(call: ServiceCall):
         hass.bus.async_fire(
             EVENT_HISTORY,
-            {"messages": hass.data[DOMAIN]["messages"]}
+            {"messages": hass.data[DOMAIN]["messages"]},
         )
+
+    async def clear_chat(call: ServiceCall):
+        async with LOCK:
+            hass.data[DOMAIN]["messages"] = []
+            await save()
+
+        hass.bus.async_fire(
+            EVENT_HISTORY,
+            {"messages": []},
+        )
+
 
     hass.services.async_register(DOMAIN, SERVICE_SEND, send_message)
     hass.services.async_register(DOMAIN, SERVICE_GET_HISTORY, get_history)
+    hass.services.async_register(DOMAIN, "clear_chat", clear_chat)
 
     return True
 
-    async def clear_chat(call: ServiceCall):
-    hass.data[DOMAIN]["messages"] = []
-
-    await save()
-
-    hass.bus.async_fire(
-        EVENT_HISTORY,
-        {"messages": []},
-        context=Context(user_id=None)
-    )
-
-    hass.services.async_register(DOMAIN, SERVICE_CLEAR_CHAT, clear_chat)
-
 
 async def async_unload_entry(hass: HomeAssistant, entry):
-    """Unload integration."""
     hass.data.pop(DOMAIN, None)
     return True

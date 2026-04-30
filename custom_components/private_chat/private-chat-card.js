@@ -1,11 +1,13 @@
 console.info("PRIVATE CHAT CARD LOADED");
 
-class HaChatCard extends HTMLElement {
+class PrivateChatCard extends HTMLElement {
     constructor() {
         super();
         this.messages = [];
         this.attachShadow({ mode: 'open' });
+
         this._autoScroll = true;
+        this._ready = false;
     }
 
     set hass(hass) {
@@ -21,23 +23,53 @@ class HaChatCard extends HTMLElement {
         this.currentUserId = hass.user?.id;
     }
 
+    // =========================
+    // LOAD HISTORY
+    // =========================
     loadHistory() {
         this._hass.callService('private_chat', 'get_history', {});
     }
 
+    // =========================
+    // SUBSCRIPTIONS (FIXED)
+    // =========================
     subscribe() {
-        this._hass.connection.subscribeEvents((event) => {
-            if (!event.data?.message) return;
 
-            const msg = event.data.message;
+        // 🔥 REALTIME via STATE (WORKS FOR GUEST)
+        this._hass.connection.subscribeMessage((msg) => {
+            if (!msg?.event?.data) return;
 
-            if (this.messages.some(m => m.timestamp === msg.timestamp)) return;
+            const event = msg.event;
+            const entity_id = event.data?.entity_id;
 
-            this.messages.push(msg);
+            // only our entity
+            if (entity_id !== "private_chat.last_message") return;
+
+            const state = event.data.new_state;
+            if (!state) return;
+
+            const message = state.state;
+            const user = state.attributes?.user || "System";
+            const timestamp = state.attributes?.timestamp || Date.now() / 1000;
+
+            // anti-duplicate
+            if (this.messages.some(m => m.timestamp === timestamp)) return;
+
+            this.messages.push({
+                message,
+                user,
+                user_id: null,
+                timestamp
+            });
+
             this.refreshChat(true);
 
-        }, 'private_chat_new_message');
+        }, {
+            type: "event",
+            event_type: "state_changed"
+        });
 
+        // 🔥 HISTORY EVENT (optional fallback)
         this._hass.connection.subscribeEvents((event) => {
             if (!event.data?.messages) return;
 
@@ -47,6 +79,9 @@ class HaChatCard extends HTMLElement {
         }, 'private_chat_history');
     }
 
+    // =========================
+    // SEND MESSAGE
+    // =========================
     sendMessage() {
         const input = this.shadowRoot.querySelector('#msg-input');
         const text = input.value.trim();
@@ -59,6 +94,9 @@ class HaChatCard extends HTMLElement {
         input.value = '';
     }
 
+    // =========================
+    // SCROLL LOGIC
+    // =========================
     scrollToBottom(force = false) {
         const box = this.shadowRoot.querySelector('#chat-box');
         if (!box) return;
@@ -73,6 +111,9 @@ class HaChatCard extends HTMLElement {
         }
     }
 
+    // =========================
+    // RENDER CHAT
+    // =========================
     refreshChat(forceScroll = false) {
         const box = this.shadowRoot.querySelector('#chat-box');
         if (!box) return;
@@ -86,29 +127,34 @@ class HaChatCard extends HTMLElement {
             div.className = `msg ${isMe ? 'me' : 'other'}`;
 
             const time = new Date(msg.timestamp * 1000)
-                .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                .toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
 
             const bubble = document.createElement('div');
             bubble.className = 'bubble';
 
             const meta = document.createElement('div');
             meta.className = 'meta';
-            meta.textContent = `${msg.user} ${time}`;
+            meta.innerHTML = `<strong>${msg.user}</strong> <span>${time}</span>`;
 
             const text = document.createElement('div');
             text.className = 'text';
-            text.textContent = msg.message; // ✅ XSS FIX
+            text.textContent = msg.message;
 
             bubble.appendChild(meta);
             bubble.appendChild(text);
             div.appendChild(bubble);
-
             box.appendChild(div);
         });
 
         this.scrollToBottom(forceScroll);
     }
 
+    // =========================
+    // UI
+    // =========================
     render() {
         this.shadowRoot.innerHTML = `
         <style>
@@ -128,15 +174,21 @@ class HaChatCard extends HTMLElement {
             display:flex;
             flex-direction:column;
             gap:8px;
+            padding-bottom:10px;
         }
 
-        .msg { max-width:75%; display:flex; flex-direction:column; }
+        .msg {
+            max-width:75%;
+            display:flex;
+            flex-direction:column;
+        }
+
         .me { align-self:flex-end; }
         .other { align-self:flex-start; }
 
         .bubble {
-            padding:10px;
-            border-radius:12px;
+            padding:10px 12px;
+            border-radius:14px;
             background:var(--secondary-background-color,#e5e5e5);
         }
 
@@ -148,7 +200,13 @@ class HaChatCard extends HTMLElement {
         .meta {
             font-size:11px;
             opacity:0.7;
+            display:flex;
+            justify-content:space-between;
             margin-bottom:3px;
+        }
+
+        .text {
+            word-break:break-word;
         }
 
         #input-area {
@@ -175,6 +233,7 @@ class HaChatCard extends HTMLElement {
 
         <div id="chat-container">
             <div id="chat-box"></div>
+
             <div id="input-area">
                 <input id="msg-input" placeholder="Message..." />
                 <button id="send-btn">Send</button>
@@ -191,6 +250,7 @@ class HaChatCard extends HTMLElement {
             });
 
         const box = this.shadowRoot.querySelector('#chat-box');
+
         box.addEventListener('scroll', () => {
             const isBottom =
                 box.scrollHeight - box.scrollTop - box.clientHeight < 80;
@@ -203,4 +263,4 @@ class HaChatCard extends HTMLElement {
     getCardSize() { return 6; }
 }
 
-customElements.define('private-chat-card', HaChatCard);
+customElements.define('private-chat-card', PrivateChatCard);

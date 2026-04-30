@@ -12,12 +12,10 @@ LOCK = asyncio.Lock()
 
 
 async def async_setup(hass: HomeAssistant, config):
-    """Legacy support."""
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry):
-    """UI config flow entry setup."""
 
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
@@ -34,9 +32,27 @@ async def async_setup_entry(hass: HomeAssistant, entry):
             "messages": hass.data[DOMAIN]["messages"]
         })
 
-    # =========================
-    # SEND MESSAGE
-    # =========================
+    def push_state(msg):
+        # 🔥 GLOBAL STATE (VISIBLE TO ALL USERS INCLUDING GUEST)
+        hass.states.async_set(
+            "private_chat.last_message",
+            msg["message"],
+            {
+                "user": msg["user"],
+                "timestamp": msg["timestamp"]
+            }
+        )
+
+        hass.states.async_set(
+            "private_chat.last_user",
+            msg["user"]
+        )
+
+        hass.states.async_set(
+            "private_chat.history_size",
+            len(hass.data[DOMAIN]["messages"])
+        )
+
     async def send_message(call: ServiceCall):
         text = call.data.get("message")
         if not text:
@@ -66,39 +82,31 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
             await save()
 
-        hass.bus.async_fire(
-            EVENT_NEW_MESSAGE,
-            {"message": msg},
-            context=call.context
-        )
+        push_state(msg)
 
-    # =========================
-    # HISTORY
-    # =========================
     async def get_history(call: ServiceCall):
-        hass.bus.async_fire(
-            EVENT_HISTORY,
-            {"messages": hass.data[DOMAIN]["messages"]},
-            context=call.context
+        hass.states.async_set(
+            "private_chat.history",
+            "loaded",
+            {
+                "messages": hass.data[DOMAIN]["messages"]
+            }
         )
 
-    # =========================
-    # CLEAR CHAT
-    # =========================
     async def clear_chat(call: ServiceCall):
         async with LOCK:
             hass.data[DOMAIN]["messages"] = []
             await save()
 
-        hass.bus.async_fire(
-            EVENT_HISTORY,
-            {"messages": []},
-            context=call.context
+        hass.states.async_set(
+            "private_chat.history",
+            "cleared",
+            {"messages": []}
         )
 
-    # =========================
-    # REGISTER SERVICES
-    # =========================
+        hass.states.async_set("private_chat.last_message", "")
+        hass.states.async_set("private_chat.history_size", 0)
+
     hass.services.async_register(DOMAIN, SERVICE_SEND, send_message)
     hass.services.async_register(DOMAIN, SERVICE_GET_HISTORY, get_history)
     hass.services.async_register(DOMAIN, SERVICE_CLEAR_CHAT, clear_chat)
@@ -107,6 +115,5 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
 
 async def async_unload_entry(hass: HomeAssistant, entry):
-    """Unload integration."""
     hass.data.pop(DOMAIN, None)
     return True

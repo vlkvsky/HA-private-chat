@@ -9,4 +9,4 @@ send_message:
 
 get_history:
   name: Get History
-  description: Sends chat history via event bus.
+  description: Triggers history event.

@@ -13,6 +13,6 @@ class PrivateChatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_show_form(step_id="user")
 
         return self.async_create_entry(
-            title="Private Chat Pro",
+            title="Private Chat",
             data={}
         )

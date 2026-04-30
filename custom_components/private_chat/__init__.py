@@ -12,12 +12,10 @@ LOCK = asyncio.Lock()
 
 
 async def async_setup(hass: HomeAssistant, config):
-    """Legacy support."""
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry):
-    """UI config flow entry setup."""
 
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
@@ -27,16 +25,12 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["messages"] = messages
 
-    _LOGGER.info(f"[private_chat] Loaded {len(messages)} messages")
-
     async def save():
-        await store.async_save({
-            "messages": hass.data[DOMAIN]["messages"]
-        })
+        await store.async_save({"messages": hass.data[DOMAIN]["messages"]})
 
-    # =========================
+    # =====================
     # SEND MESSAGE
-    # =========================
+    # =====================
     async def send_message(call: ServiceCall):
         text = call.data.get("message")
         if not text:
@@ -66,47 +60,32 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
             await save()
 
-        hass.bus.async_fire(
-            EVENT_NEW_MESSAGE,
-            {"message": msg},
-            context=call.context
-        )
-
-    # =========================
-    # HISTORY
-    # =========================
+    # =====================
+    # HISTORY (IMPORTANT)
+    # =====================
     async def get_history(call: ServiceCall):
-        hass.bus.async_fire(
-            EVENT_HISTORY,
-            {"messages": hass.data[DOMAIN]["messages"]},
-            context=call.context
-        )
+        # ВСЕГДА возвращаем полный список
+        return {
+            "messages": hass.data[DOMAIN]["messages"]
+        }
 
-    # =========================
+    # =====================
     # CLEAR CHAT
-    # =========================
+    # =====================
     async def clear_chat(call: ServiceCall):
         async with LOCK:
             hass.data[DOMAIN]["messages"] = []
             await save()
 
-        hass.bus.async_fire(
-            EVENT_HISTORY,
-            {"messages": []},
-            context=call.context
-        )
+        return {"ok": True}
 
-    # =========================
-    # REGISTER SERVICES
-    # =========================
     hass.services.async_register(DOMAIN, SERVICE_SEND, send_message)
     hass.services.async_register(DOMAIN, SERVICE_GET_HISTORY, get_history)
-    hass.services.async_register(DOMAIN, SERVICE_CLEAR_CHAT, clear_chat)
+    hass.services.async_register(DOMAIN, "clear_chat", clear_chat)
 
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry):
-    """Unload integration."""
     hass.data.pop(DOMAIN, None)
     return True

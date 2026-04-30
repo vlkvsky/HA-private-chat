@@ -14,39 +14,41 @@ class HaChatCard extends HTMLElement {
         if (!this._ready) {
             this._ready = true;
             this.render();
-            this.subscribe();
             this.loadHistory();
+            this.startPolling();
         }
 
         this.currentUserId = hass.user?.id;
     }
 
-    loadHistory() {
-        this._hass.callService('private_chat', 'get_history', {});
+    // =====================
+    // LOAD HISTORY
+    // =====================
+    async loadHistory() {
+        const res = await this._hass.callService(
+            'private_chat',
+            'get_history',
+            {}
+        );
+
+        if (res?.messages) {
+            this.messages = res.messages;
+            this.refreshChat(true);
+        }
     }
 
-    subscribe() {
-        this._hass.connection.subscribeEvents((event) => {
-            if (!event.data?.message) return;
-
-            const msg = event.data.message;
-
-            if (this.messages.some(m => m.timestamp === msg.timestamp)) return;
-
-            this.messages.push(msg);
-            this.refreshChat(true);
-
-        }, 'private_chat_new_message');
-
-        this._hass.connection.subscribeEvents((event) => {
-            if (!event.data?.messages) return;
-
-            this.messages = event.data.messages;
-            this.refreshChat(true);
-
-        }, 'private_chat_history');
+    // =====================
+    // POLLING (FIX FOR GUESTS)
+    // =====================
+    startPolling() {
+        setInterval(() => {
+            this.loadHistory();
+        }, 3000); // каждые 3 сек
     }
 
+    // =====================
+    // SEND
+    // =====================
     sendMessage() {
         const input = this.shadowRoot.querySelector('#msg-input');
         const text = input.value.trim();
@@ -59,20 +61,9 @@ class HaChatCard extends HTMLElement {
         input.value = '';
     }
 
-    scrollToBottom(force = false) {
-        const box = this.shadowRoot.querySelector('#chat-box');
-        if (!box) return;
-
-        const isNearBottom =
-            box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-
-        if (force || this._autoScroll || isNearBottom) {
-            requestAnimationFrame(() => {
-                box.scrollTop = box.scrollHeight;
-            });
-        }
-    }
-
+    // =====================
+    // RENDER
+    // =====================
     refreshChat(forceScroll = false) {
         const box = this.shadowRoot.querySelector('#chat-box');
         if (!box) return;
@@ -88,25 +79,29 @@ class HaChatCard extends HTMLElement {
             const time = new Date(msg.timestamp * 1000)
                 .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-            const bubble = document.createElement('div');
-            bubble.className = 'bubble';
-
-            const meta = document.createElement('div');
-            meta.className = 'meta';
-            meta.textContent = `${msg.user} ${time}`;
-
-            const text = document.createElement('div');
-            text.className = 'text';
-            text.textContent = msg.message; // ✅ XSS FIX
-
-            bubble.appendChild(meta);
-            bubble.appendChild(text);
-            div.appendChild(bubble);
+            div.innerHTML = `
+                <div class="bubble">
+                    <div class="meta">
+                        <strong>${msg.user}</strong>
+                        <span>${time}</span>
+                    </div>
+                    <div class="text">${msg.message}</div>
+                </div>
+            `;
 
             box.appendChild(div);
         });
 
         this.scrollToBottom(forceScroll);
+    }
+
+    scrollToBottom(force = false) {
+        const box = this.shadowRoot.querySelector('#chat-box');
+        if (!box) return;
+
+        requestAnimationFrame(() => {
+            box.scrollTop = box.scrollHeight;
+        });
     }
 
     render() {
@@ -130,46 +125,39 @@ class HaChatCard extends HTMLElement {
             gap:8px;
         }
 
-        .msg { max-width:75%; display:flex; flex-direction:column; }
+        .msg { max-width:75%; }
         .me { align-self:flex-end; }
         .other { align-self:flex-start; }
 
         .bubble {
             padding:10px;
             border-radius:12px;
-            background:var(--secondary-background-color,#e5e5e5);
+            background:#e5e5e5;
         }
 
         .me .bubble {
-            background:var(--primary-color,#03a9f4);
+            background:#03a9f4;
             color:white;
-        }
-
-        .meta {
-            font-size:11px;
-            opacity:0.7;
-            margin-bottom:3px;
         }
 
         #input-area {
             display:flex;
             gap:8px;
-            border-top:1px solid var(--divider-color,#ccc);
+            border-top:1px solid #ccc;
             padding-top:10px;
         }
 
         input {
             flex:1;
             padding:10px;
-            border-radius:8px;
         }
 
         button {
-            background:var(--primary-color,#03a9f4);
+            background:#03a9f4;
             color:white;
             border:none;
-            border-radius:8px;
             padding:0 16px;
+            border-radius:8px;
         }
         </style>
 
@@ -177,30 +165,19 @@ class HaChatCard extends HTMLElement {
             <div id="chat-box"></div>
             <div id="input-area">
                 <input id="msg-input" placeholder="Message..." />
-                <button id="send-btn">Send</button>
+                <button>Send</button>
             </div>
         </div>
         `;
 
-        this.shadowRoot.querySelector('#send-btn')
+        this.shadowRoot.querySelector('button')
             .addEventListener('click', () => this.sendMessage());
 
-        this.shadowRoot.querySelector('#msg-input')
+        this.shadowRoot.querySelector('input')
             .addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') this.sendMessage();
             });
-
-        const box = this.shadowRoot.querySelector('#chat-box');
-        box.addEventListener('scroll', () => {
-            const isBottom =
-                box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-
-            this._autoScroll = isBottom;
-        });
     }
-
-    setConfig() {}
-    getCardSize() { return 6; }
 }
 
 customElements.define('private-chat-card', HaChatCard);

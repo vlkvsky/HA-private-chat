@@ -27,8 +27,6 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["messages"] = messages
 
-    _LOGGER.info(f"[private_chat] Loaded {len(messages)} messages")
-
     async def save():
         await store.async_save({"messages": hass.data[DOMAIN]["messages"]})
 

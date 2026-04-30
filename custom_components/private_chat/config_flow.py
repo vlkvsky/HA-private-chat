@@ -6,8 +6,6 @@ from .const import DOMAIN
 
 
 class PrivateChatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Simple config flow (no options needed)."""
-
     VERSION = 1
 
     async def async_step_user(self, user_input=None):

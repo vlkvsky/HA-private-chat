@@ -1,6 +1,5 @@
 send_message:
   name: Send Message
-  description: Sends a chat message.
   fields:
     message:
       required: true
@@ -9,8 +8,6 @@ send_message:
 
 get_history:
   name: Get History
-  description: Triggers history event.
 
 clear_chat:
   name: Clear Chat
-  description: Deletes all chat messages from history.

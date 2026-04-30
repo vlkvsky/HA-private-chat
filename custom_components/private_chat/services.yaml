@@ -1,0 +1,12 @@
+send_message:
+  name: Send Message
+  description: Sends a chat message.
+  fields:
+    message:
+      required: true
+      selector:
+        text:
+
+get_history:
+  name: Get History
+  description: Sends chat history via event bus.

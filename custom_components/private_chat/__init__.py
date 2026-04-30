@@ -12,6 +12,7 @@ LOCK = asyncio.Lock()
 
 
 async def async_setup(hass: HomeAssistant, config):
+    """Legacy support (YAML disabled style integration)."""
     return True
 
 
@@ -31,6 +32,9 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     async def save():
         await store.async_save({"messages": hass.data[DOMAIN]["messages"]})
 
+    # =========================
+    # SEND MESSAGE
+    # =========================
     async def send_message(call: ServiceCall):
         text = call.data.get("message")
         if not text:
@@ -65,12 +69,18 @@ async def async_setup_entry(hass: HomeAssistant, entry):
             {"message": msg},
         )
 
+    # =========================
+    # HISTORY
+    # =========================
     async def get_history(call: ServiceCall):
         hass.bus.async_fire(
             EVENT_HISTORY,
             {"messages": hass.data[DOMAIN]["messages"]},
         )
 
+    # =========================
+    # CLEAR CHAT  ✅ NEW
+    # =========================
     async def clear_chat(call: ServiceCall):
         async with LOCK:
             hass.data[DOMAIN]["messages"] = []
@@ -81,7 +91,9 @@ async def async_setup_entry(hass: HomeAssistant, entry):
             {"messages": []},
         )
 
-
+    # =========================
+    # SERVICES
+    # =========================
     hass.services.async_register(DOMAIN, SERVICE_SEND, send_message)
     hass.services.async_register(DOMAIN, SERVICE_GET_HISTORY, get_history)
     hass.services.async_register(DOMAIN, "clear_chat", clear_chat)
@@ -90,5 +102,6 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
 
 async def async_unload_entry(hass: HomeAssistant, entry):
+    """Unload integration."""
     hass.data.pop(DOMAIN, None)
     return True

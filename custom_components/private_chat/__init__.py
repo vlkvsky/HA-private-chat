@@ -12,11 +12,12 @@ LOCK = asyncio.Lock()
 
 
 async def async_setup(hass: HomeAssistant, config):
+    """Legacy support."""
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry):
-    """UI config flow entry."""
+    """UI config flow entry setup."""
 
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
@@ -65,20 +66,21 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
             await save()
 
-        # 🔥 broadcast event (only for realtime updates)
         hass.bus.async_fire(
             EVENT_NEW_MESSAGE,
             {"message": msg},
-            context=call.context,
+            context=call.context
         )
 
     # =========================
-    # HISTORY (FIXED - NO EVENTS)
+    # HISTORY
     # =========================
     async def get_history(call: ServiceCall):
-        return {
-            "messages": hass.data[DOMAIN]["messages"]
-        }
+        hass.bus.async_fire(
+            EVENT_HISTORY,
+            {"messages": hass.data[DOMAIN]["messages"]},
+            context=call.context
+        )
 
     # =========================
     # CLEAR CHAT
@@ -91,7 +93,7 @@ async def async_setup_entry(hass: HomeAssistant, entry):
         hass.bus.async_fire(
             EVENT_HISTORY,
             {"messages": []},
-            context=call.context,
+            context=call.context
         )
 
     # =========================
@@ -105,5 +107,6 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
 
 async def async_unload_entry(hass: HomeAssistant, entry):
+    """Unload integration."""
     hass.data.pop(DOMAIN, None)
     return True

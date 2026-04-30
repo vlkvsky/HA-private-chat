@@ -1,7 +1,7 @@
 {
   "domain": "private_chat",
   "name": "Private Chat Pro",
-  "version": "2.0",
+  "version": "2.1",
   "documentation": "https://github.com/vlkvsky/HA-private-chat",
   "config_flow": true,
   "requirements": [],

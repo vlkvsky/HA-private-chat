@@ -1,10 +1,11 @@
 import voluptuous as vol
+
 from homeassistant import config_entries
 
 from .const import DOMAIN
 
 
-class PrivateChatFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class PrivateChatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     async def async_step_user(self, user_input=None):

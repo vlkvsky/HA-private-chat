@@ -47,36 +47,37 @@ class HaChatCard extends HTMLElement {
         }, 'private_chat_history');
     }
 
-    sendMessage() {
+    sendMessage(file = null) {
         const input = this.shadowRoot.querySelector('#msg-input');
         const text = input.value.trim();
-        if (!text) return;
 
-        this._hass.callService('private_chat', 'send_message', {
-            message: text
-        });
+        if (!text && !file) return;
+
+        if (file) {
+            const reader = new FileReader();
+
+            reader.onload = () => {
+                const base64 = reader.result.split(',')[1];
+
+                this._hass.callService('private_chat', 'send_message', {
+                    message: text,
+                    file: base64,
+                    file_name: file.name
+                });
+            };
+
+            reader.readAsDataURL(file);
+        } else {
+            this._hass.callService('private_chat', 'send_message', {
+                message: text
+            });
+        }
 
         input.value = '';
     }
 
-    scrollToBottom(force = false) {
-        const box = this.shadowRoot.querySelector('#chat-box');
-        if (!box) return;
-
-        const isNearBottom =
-            box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-
-        if (force || this._autoScroll || isNearBottom) {
-            requestAnimationFrame(() => {
-                box.scrollTop = box.scrollHeight;
-            });
-        }
-    }
-
     refreshChat(forceScroll = false) {
         const box = this.shadowRoot.querySelector('#chat-box');
-        if (!box) return;
-
         box.innerHTML = '';
 
         this.messages.forEach(msg => {
@@ -85,122 +86,92 @@ class HaChatCard extends HTMLElement {
             const div = document.createElement('div');
             div.className = `msg ${isMe ? 'me' : 'other'}`;
 
-            const time = new Date(msg.timestamp * 1000)
-                .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
             const bubble = document.createElement('div');
             bubble.className = 'bubble';
 
             const meta = document.createElement('div');
             meta.className = 'meta';
-            meta.textContent = `${msg.user} ${time}`;
-
-            const text = document.createElement('div');
-            text.className = 'text';
-            text.textContent = msg.message; // ✅ XSS FIX
+            meta.textContent = `${msg.user}`;
 
             bubble.appendChild(meta);
-            bubble.appendChild(text);
-            div.appendChild(bubble);
 
+            if (msg.message) {
+                const text = document.createElement('div');
+                text.textContent = msg.message;
+                bubble.appendChild(text);
+            }
+
+            // 📷 IMAGE
+            if (msg.file_type === 'image') {
+                const img = document.createElement('img');
+                img.src = msg.file_url;
+                img.style.maxWidth = '200px';
+                img.style.borderRadius = '10px';
+                bubble.appendChild(img);
+            }
+
+            // 🎬 VIDEO
+            if (msg.file_type === 'video') {
+                const video = document.createElement('video');
+                video.src = msg.file_url;
+                video.controls = true;
+                video.style.maxWidth = '200px';
+                bubble.appendChild(video);
+            }
+
+            // 📄 FILE
+            if (msg.file_type === 'file') {
+                const link = document.createElement('a');
+                link.href = msg.file_url;
+                link.textContent = msg.file_name;
+                link.target = '_blank';
+                bubble.appendChild(link);
+            }
+
+            div.appendChild(bubble);
             box.appendChild(div);
         });
 
         this.scrollToBottom(forceScroll);
     }
 
+    scrollToBottom(force = false) {
+        const box = this.shadowRoot.querySelector('#chat-box');
+        if (force || this._autoScroll) {
+            requestAnimationFrame(() => {
+                box.scrollTop = box.scrollHeight;
+            });
+        }
+    }
+
     render() {
         this.shadowRoot.innerHTML = `
         <style>
-        :host { display:block; }
-
-        #chat-container {
-            display:flex;
-            flex-direction:column;
-            height:740px;
-            padding:10px;
-            box-sizing:border-box;
-        }
-
-        #chat-box {
-            flex:1;
-            overflow-y:auto;
-            display:flex;
-            flex-direction:column;
-            gap:8px;
-        }
-
-        .msg { max-width:75%; display:flex; flex-direction:column; }
+        #chat-container { height:740px; display:flex; flex-direction:column; }
+        #chat-box { flex:1; overflow:auto; display:flex; flex-direction:column; gap:8px; }
+        .msg { max-width:75%; }
         .me { align-self:flex-end; }
         .other { align-self:flex-start; }
-
-        .bubble {
-            padding:10px;
-            border-radius:12px;
-            background:var(--secondary-background-color,#e5e5e5);
-        }
-
-        .me .bubble {
-            background:var(--primary-color,#03a9f4);
-            color:white;
-        }
-
-        .meta {
-            font-size:11px;
-            opacity:0.7;
-            margin-bottom:3px;
-        }
-
-        #input-area {
-            display:flex;
-            gap:8px;
-            border-top:1px solid var(--divider-color,#ccc);
-            padding-top:10px;
-        }
-
-        input {
-            flex:1;
-            padding:10px;
-            border-radius:8px;
-        }
-
-        button {
-            background:var(--primary-color,#03a9f4);
-            color:white;
-            border:none;
-            border-radius:8px;
-            padding:0 16px;
-        }
+        .bubble { padding:10px; border-radius:12px; background:#eee; }
+        .me .bubble { background:#03a9f4; color:white; }
         </style>
 
         <div id="chat-container">
             <div id="chat-box"></div>
-            <div id="input-area">
-                <input id="msg-input" placeholder="Message..." />
-                <button id="send-btn">Send</button>
-            </div>
+            <input id="msg-input">
+            <input type="file" id="file-input">
+            <button id="send-btn">Send</button>
         </div>
         `;
 
+        const fileInput = this.shadowRoot.querySelector('#file-input');
+
         this.shadowRoot.querySelector('#send-btn')
-            .addEventListener('click', () => this.sendMessage());
-
-        this.shadowRoot.querySelector('#msg-input')
-            .addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') this.sendMessage();
+            .addEventListener('click', () => {
+                this.sendMessage(fileInput.files[0]);
+                fileInput.value = '';
             });
-
-        const box = this.shadowRoot.querySelector('#chat-box');
-        box.addEventListener('scroll', () => {
-            const isBottom =
-                box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-
-            this._autoScroll = isBottom;
-        });
     }
-
-    setConfig() {}
-    getCardSize() { return 6; }
 }
 
 customElements.define('private-chat-card', HaChatCard);

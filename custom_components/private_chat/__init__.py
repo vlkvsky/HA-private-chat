@@ -1,11 +1,11 @@
-import logging
+import os
 import time
 import asyncio
-import os
-import base64
+import logging
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.storage import Store
+from homeassistant.components.http import HomeAssistantView
 
 from .const import *
 
@@ -13,10 +13,63 @@ _LOGGER = logging.getLogger(__name__)
 LOCK = asyncio.Lock()
 
 
-async def async_setup(hass: HomeAssistant, config):
-    return True
+# =========================
+# HTTP UPLOAD VIEW (NO LIMIT)
+# =========================
+class PrivateChatUploadView(HomeAssistantView):
+    url = "/api/private_chat/upload"
+    name = "api:private_chat:upload"
+    requires_auth = True
+
+    async def post(self, request):
+        hass = request.app["hass"]
+
+        reader = await request.multipart()
+        field = await reader.next()
+
+        if not field:
+            return self.json({"error": "no file"})
+
+        filename = field.filename
+        upload_dir = hass.config.path("www/private_chat")
+        os.makedirs(upload_dir, exist_ok=True)
+
+        safe_name = f"{int(time.time())}_{filename}"
+        file_path = os.path.join(upload_dir, safe_name)
+
+        size = 0
+
+        try:
+            with open(file_path, "wb") as f:
+                while True:
+                    chunk = await field.read_chunk()
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    f.write(chunk)
+        except Exception as e:
+            _LOGGER.error(f"[private_chat] upload error: {e}")
+            return self.json({"error": "write failed"})
+
+        ext = safe_name.split(".")[-1].lower()
+
+        if ext in ["jpg", "jpeg", "png", "gif", "webp"]:
+            ftype = "image"
+        elif ext in ["mp4", "webm", "mov"]:
+            ftype = "video"
+        else:
+            ftype = "file"
+
+        return self.json({
+            "file_url": f"/local/private_chat/{safe_name}",
+            "file_type": ftype,
+            "file_name": filename
+        })
 
 
+# =========================
+# SETUP
+# =========================
 async def async_setup_entry(hass: HomeAssistant, entry):
 
     store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
@@ -27,9 +80,12 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["messages"] = messages
 
-    www_path = hass.config.path("www/private_chat")
-    os.makedirs(www_path, exist_ok=True)
+    _LOGGER.info(f"[private_chat] loaded {len(messages)} messages")
 
+    # REGISTER HTTP UPLOAD
+    hass.http.register_view(PrivateChatUploadView())
+
+    # SAVE STORAGE
     async def save():
         await store.async_save({
             "messages": hass.data[DOMAIN]["messages"]
@@ -39,11 +95,8 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     # SEND MESSAGE
     # =========================
     async def send_message(call: ServiceCall):
-        text = call.data.get("message")
-        file_data = call.data.get("file")
-        file_name = call.data.get("file_name")
 
-        user_name = "System"
+        user_name = "User"
         user_id = None
 
         if call.context and call.context.user_id:
@@ -52,39 +105,14 @@ async def async_setup_entry(hass: HomeAssistant, entry):
                 user_name = user.name
                 user_id = user.id
 
-        file_url = None
-        file_type = None
-
-        # 📦 FILE SAVE
-        if file_data and file_name:
-            try:
-                content = base64.b64decode(file_data)
-                filename = f"{int(time.time())}_{file_name}"
-                file_path = os.path.join(www_path, filename)
-
-                with open(file_path, "wb") as f:
-                    f.write(content)
-
-                file_url = f"/local/private_chat/{filename}"
-
-                if file_name.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                    file_type = "image"
-                elif file_name.lower().endswith((".mp4", ".webm", ".mov")):
-                    file_type = "video"
-                else:
-                    file_type = "file"
-
-            except Exception as e:
-                _LOGGER.error(f"[private_chat] File save error: {e}")
-
         msg = {
             "timestamp": time.time(),
             "user": user_name,
             "user_id": user_id,
-            "message": text,
-            "file_url": file_url,
-            "file_type": file_type,
-            "file_name": file_name
+            "message": call.data.get("message"),
+            "file_url": call.data.get("file_url"),
+            "file_type": call.data.get("file_type"),
+            "file_name": call.data.get("file_name"),
         }
 
         async with LOCK:
@@ -102,6 +130,8 @@ async def async_setup_entry(hass: HomeAssistant, entry):
         )
 
     # =========================
+    # HISTORY
+    # =========================
     async def get_history(call: ServiceCall):
         hass.bus.async_fire(
             EVENT_HISTORY,
@@ -109,6 +139,9 @@ async def async_setup_entry(hass: HomeAssistant, entry):
             context=call.context
         )
 
+    # =========================
+    # CLEAR CHAT
+    # =========================
     async def clear_chat(call: ServiceCall):
         async with LOCK:
             hass.data[DOMAIN]["messages"] = []
@@ -120,6 +153,9 @@ async def async_setup_entry(hass: HomeAssistant, entry):
             context=call.context
         )
 
+    # =========================
+    # REGISTER SERVICES
+    # =========================
     hass.services.async_register(DOMAIN, SERVICE_SEND, send_message)
     hass.services.async_register(DOMAIN, SERVICE_GET_HISTORY, get_history)
     hass.services.async_register(DOMAIN, SERVICE_CLEAR_CHAT, clear_chat)

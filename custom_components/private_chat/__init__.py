@@ -2,7 +2,6 @@ import os
 import time
 import asyncio
 import logging
-import re
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.storage import Store
@@ -15,15 +14,7 @@ LOCK = asyncio.Lock()
 
 
 # =========================
-# SAFE FILENAME
-# =========================
-def safe_filename(name: str) -> str:
-    name = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
-    return name[:120]
-
-
-# =========================
-# STREAM UPLOAD (NO LIMIT)
+# UPLOAD VIEW (STREAM)
 # =========================
 class PrivateChatUploadView(HomeAssistantView):
     url = "/api/private_chat/upload"
@@ -39,7 +30,7 @@ class PrivateChatUploadView(HomeAssistantView):
         if not field:
             return self.json({"error": "no file"})
 
-        filename = safe_filename(field.filename or "file.bin")
+        filename = field.filename or "file.bin"
 
         upload_dir = hass.config.path("www/private_chat")
         os.makedirs(upload_dir, exist_ok=True)
@@ -47,13 +38,17 @@ class PrivateChatUploadView(HomeAssistantView):
         safe_name = f"{int(time.time())}_{filename}"
         file_path = os.path.join(upload_dir, safe_name)
 
-        # STREAM WRITE (NO RAM LIMIT)
-        with open(file_path, "wb") as f:
-            while True:
-                chunk = await field.read_chunk(1024 * 512)
-                if not chunk:
-                    break
-                f.write(chunk)
+        try:
+            with open(file_path, "wb") as f:
+                while True:
+                    chunk = await field.read_chunk(1024 * 256)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+
+        except Exception as e:
+            _LOGGER.error(f"[private_chat] upload error: {e}")
+            return self.json({"error": "write_failed"})
 
         ext = filename.lower().split(".")[-1]
 
@@ -86,13 +81,19 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
     _LOGGER.info(f"[private_chat] loaded {len(messages)} messages")
 
+    # register upload endpoint
     hass.http.register_view(PrivateChatUploadView())
 
+    # =========================
+    # SAVE STORAGE
+    # =========================
     async def save():
-        await store.async_save({"messages": hass.data[DOMAIN]["messages"]})
+        await store.async_save({
+            "messages": hass.data[DOMAIN]["messages"]
+        })
 
     # =========================
-    # SEND MESSAGE (CLEAN ONLY)
+    # SEND MESSAGE
     # =========================
     async def send_message(call: ServiceCall):
 
@@ -105,20 +106,15 @@ async def async_setup_entry(hass: HomeAssistant, entry):
                 user_name = user.name
                 user_id = user.id
 
-        # 🔥 ЖЁСТКАЯ САНИТИЗАЦИЯ (ВАЖНО)
         msg = {
             "timestamp": time.time(),
             "user": user_name,
             "user_id": user_id,
             "message": call.data.get("message"),
-
-            # ONLY URL MODE (NO FILE, NO BASE64 EVER)
             "file_url": call.data.get("file_url"),
             "file_type": call.data.get("file_type"),
             "file_name": call.data.get("file_name"),
         }
-
-        msg = {k: v for k, v in msg.items() if v is not None}
 
         async with LOCK:
             hass.data[DOMAIN]["messages"].append(msg)
@@ -130,17 +126,7 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
         hass.bus.async_fire(
             EVENT_NEW_MESSAGE,
-            {
-                "message": {
-                    "timestamp": msg["timestamp"],
-                    "user": msg["user"],
-                    "user_id": msg["user_id"],
-                    "message": msg.get("message"),
-                    "file_url": msg.get("file_url"),
-                    "file_type": msg.get("file_type"),
-                    "file_name": msg.get("file_name"),
-                }
-            },
+            {"message": msg},
             context=call.context
         )
 
@@ -155,7 +141,7 @@ async def async_setup_entry(hass: HomeAssistant, entry):
         )
 
     # =========================
-    # CLEAR
+    # CLEAR CHAT (MESSAGES)
     # =========================
     async def clear_chat(call: ServiceCall):
         async with LOCK:
@@ -169,11 +155,44 @@ async def async_setup_entry(hass: HomeAssistant, entry):
         )
 
     # =========================
-    # REGISTER SERVICES
+    # NEW: CLEAR FILES FOLDER
+    # =========================
+    async def clear_upload_folder(call: ServiceCall):
+        upload_dir = hass.config.path("www/private_chat")
+
+        deleted = 0
+
+        if os.path.exists(upload_dir):
+            for file in os.listdir(upload_dir):
+                file_path = os.path.join(upload_dir, file)
+
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                        deleted += 1
+                except Exception as e:
+                    _LOGGER.error(f"[private_chat] delete error {file}: {e}")
+
+        _LOGGER.info(f"[private_chat] cleaned upload folder: {deleted} files")
+
+        hass.bus.async_fire(
+            "private_chat_uploads_cleared",
+            {"deleted": deleted},
+            context=call.context
+        )
+
+    # =========================
+    # SERVICES
     # =========================
     hass.services.async_register(DOMAIN, SERVICE_SEND, send_message)
     hass.services.async_register(DOMAIN, SERVICE_GET_HISTORY, get_history)
     hass.services.async_register(DOMAIN, SERVICE_CLEAR_CHAT, clear_chat)
+
+    hass.services.async_register(
+        DOMAIN,
+        "clear_uploads",
+        clear_upload_folder
+    )
 
     return True
 

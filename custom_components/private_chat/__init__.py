@@ -2,6 +2,7 @@ import os
 import time
 import asyncio
 import logging
+import re
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.storage import Store
@@ -14,7 +15,15 @@ LOCK = asyncio.Lock()
 
 
 # =========================
-# HTTP UPLOAD VIEW (NO LIMIT)
+# SAFE FILENAME
+# =========================
+def safe_filename(name: str) -> str:
+    name = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
+    return name[:120]
+
+
+# =========================
+# STREAM UPLOAD (NO LIMIT)
 # =========================
 class PrivateChatUploadView(HomeAssistantView):
     url = "/api/private_chat/upload"
@@ -30,28 +39,23 @@ class PrivateChatUploadView(HomeAssistantView):
         if not field:
             return self.json({"error": "no file"})
 
-        filename = field.filename
+        filename = safe_filename(field.filename or "file.bin")
+
         upload_dir = hass.config.path("www/private_chat")
         os.makedirs(upload_dir, exist_ok=True)
 
         safe_name = f"{int(time.time())}_{filename}"
         file_path = os.path.join(upload_dir, safe_name)
 
-        size = 0
+        # STREAM WRITE (NO RAM LIMIT)
+        with open(file_path, "wb") as f:
+            while True:
+                chunk = await field.read_chunk(1024 * 512)
+                if not chunk:
+                    break
+                f.write(chunk)
 
-        try:
-            with open(file_path, "wb") as f:
-                while True:
-                    chunk = await field.read_chunk()
-                    if not chunk:
-                        break
-                    size += len(chunk)
-                    f.write(chunk)
-        except Exception as e:
-            _LOGGER.error(f"[private_chat] upload error: {e}")
-            return self.json({"error": "write failed"})
-
-        ext = safe_name.split(".")[-1].lower()
+        ext = filename.lower().split(".")[-1]
 
         if ext in ["jpg", "jpeg", "png", "gif", "webp"]:
             ftype = "image"
@@ -82,17 +86,13 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
     _LOGGER.info(f"[private_chat] loaded {len(messages)} messages")
 
-    # REGISTER HTTP UPLOAD
     hass.http.register_view(PrivateChatUploadView())
 
-    # SAVE STORAGE
     async def save():
-        await store.async_save({
-            "messages": hass.data[DOMAIN]["messages"]
-        })
+        await store.async_save({"messages": hass.data[DOMAIN]["messages"]})
 
     # =========================
-    # SEND MESSAGE
+    # SEND MESSAGE (CLEAN ONLY)
     # =========================
     async def send_message(call: ServiceCall):
 
@@ -105,15 +105,20 @@ async def async_setup_entry(hass: HomeAssistant, entry):
                 user_name = user.name
                 user_id = user.id
 
+        # 🔥 ЖЁСТКАЯ САНИТИЗАЦИЯ (ВАЖНО)
         msg = {
             "timestamp": time.time(),
             "user": user_name,
             "user_id": user_id,
             "message": call.data.get("message"),
+
+            # ONLY URL MODE (NO FILE, NO BASE64 EVER)
             "file_url": call.data.get("file_url"),
             "file_type": call.data.get("file_type"),
             "file_name": call.data.get("file_name"),
         }
+
+        msg = {k: v for k, v in msg.items() if v is not None}
 
         async with LOCK:
             hass.data[DOMAIN]["messages"].append(msg)
@@ -125,7 +130,17 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
         hass.bus.async_fire(
             EVENT_NEW_MESSAGE,
-            {"message": msg},
+            {
+                "message": {
+                    "timestamp": msg["timestamp"],
+                    "user": msg["user"],
+                    "user_id": msg["user_id"],
+                    "message": msg.get("message"),
+                    "file_url": msg.get("file_url"),
+                    "file_type": msg.get("file_type"),
+                    "file_name": msg.get("file_name"),
+                }
+            },
             context=call.context
         )
 
@@ -140,7 +155,7 @@ async def async_setup_entry(hass: HomeAssistant, entry):
         )
 
     # =========================
-    # CLEAR CHAT
+    # CLEAR
     # =========================
     async def clear_chat(call: ServiceCall):
         async with LOCK:

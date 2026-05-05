@@ -1,13 +1,18 @@
-console.info("PRIVATE CHAT CARD");
+console.info("PRIVATE CHAT FINAL STABLE JS");
 
 class HaChatCard extends HTMLElement {
     constructor() {
         super();
-        this.messages = [];
         this.attachShadow({ mode: 'open' });
+
+        this.messages = [];
+        this._ready = false;
         this._autoScroll = true;
     }
 
+    // =========================
+    // INIT
+    // =========================
     set hass(hass) {
         this._hass = hass;
 
@@ -21,97 +26,139 @@ class HaChatCard extends HTMLElement {
         this.currentUserId = hass.user?.id;
     }
 
+    // =========================
+    // HISTORY
+    // =========================
     loadHistory() {
         this._hass.callService('private_chat', 'get_history', {});
     }
 
+    // =========================
+    // SUBSCRIBE EVENTS
+    // =========================
     subscribe() {
         this._hass.connection.subscribeEvents((event) => {
-            if (!event.data?.message) return;
-
-            const msg = event.data.message;
-
-            if (this.messages.some(m => m.timestamp === msg.timestamp)) return;
+            const msg = event.data?.message;
+            if (!msg) return;
 
             this.messages.push(msg);
-            this.refreshChat(true);
+            this.appendMessage(msg, true);
 
         }, 'private_chat_new_message');
 
         this._hass.connection.subscribeEvents((event) => {
-            if (!event.data?.messages) return;
+            const msgs = event.data?.messages;
+            if (!msgs) return;
 
-            this.messages = event.data.messages;
-            this.refreshChat(true);
+            this.messages = msgs;
+            this.renderFullHistory();
 
         }, 'private_chat_history');
     }
 
-    sendMessage(file = null) {
+    // =========================
+    // SEND MESSAGE 
+    // =========================
+    async sendMessage(file = null) {
         const input = this.shadowRoot.querySelector('#msg-input');
         const text = input.value.trim();
 
         if (!text && !file) return;
 
+        let payload = {};
+
         if (file) {
-            const reader = new FileReader();
-
-            reader.onload = () => {
-                const base64 = reader.result.split(',')[1];
-
-                this._hass.callService('private_chat', 'send_message', {
-                    message: text,
-                    file: base64,
-                    file_name: file.name
-                });
-            };
-
-            reader.readAsDataURL(file);
-        } else {
-            this._hass.callService('private_chat', 'send_message', {
-                message: text
-            });
+            payload = await this.uploadFile(file);
         }
+
+        this._hass.callService('private_chat', 'send_message', {
+            message: text,
+            ...payload
+        });
 
         input.value = '';
     }
 
-    refreshChat(forceScroll = false) {
+    // =========================
+    // UPLOAD FILE 
+    // =========================
+    async uploadFile(file) {
+        const form = new FormData();
+        form.append("file", file);
+
+        const res = await fetch("/api/private_chat/upload", {
+            method: "POST",
+            body: form,
+            headers: {
+                Authorization: `Bearer ${this._hass.auth.data.access_token}`
+            }
+        });
+
+        return await res.json();
+    }
+
+    // =========================
+    // FULL HISTORY (ONLY ON LOAD)
+    // =========================
+    renderFullHistory() {
         const box = this.shadowRoot.querySelector('#chat-box');
         if (!box) return;
 
         box.innerHTML = '';
 
         this.messages.forEach(msg => {
-            const isMe = msg.user_id === this.currentUserId;
+            this.appendMessage(msg, false);
+        });
 
-            const div = document.createElement('div');
-            div.className = `msg ${isMe ? 'me' : 'other'}`;
+        this.scrollToBottom(true);
+    }
 
-            const bubble = document.createElement('div');
-            bubble.className = 'bubble';
+    // =========================
+    // APPEND MESSAGE
+    // =========================
+    appendMessage(msg, shouldScroll = true) {
+        const box = this.shadowRoot.querySelector('#chat-box');
+        if (!box) return;
 
-            const meta = document.createElement('div');
-            meta.className = 'meta';
+        const isMe = msg.user_id === this.currentUserId;
 
-            const time = new Date(msg.timestamp * 1000)
-                .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const div = document.createElement('div');
+        div.className = `msg ${isMe ? 'me' : 'other'}`;
 
-            meta.textContent = `${msg.user} ${time}`;
-            bubble.appendChild(meta);
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
 
-            if (msg.message) {
-                const text = document.createElement('div');
-                text.textContent = msg.message;
-                bubble.appendChild(text);
-            }
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+
+        const time = new Date(msg.timestamp * 1000)
+            .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        meta.textContent = `${msg.user} ${time}`;
+        bubble.appendChild(meta);
+
+        // TEXT
+        if (msg.message) {
+            const text = document.createElement('div');
+            text.textContent = msg.message;
+            bubble.appendChild(text);
+        }
+
+        // MEDIA 
+        if (msg.file_url) {
+            const wrapper = document.createElement('div');
+            wrapper.style.minHeight = '160px';
 
             if (msg.file_type === 'image') {
                 const img = document.createElement('img');
                 img.src = msg.file_url;
+                img.loading = 'lazy';
                 img.style.maxWidth = '220px';
                 img.style.borderRadius = '10px';
-                bubble.appendChild(img);
+
+                img.onclick = () => window.open(msg.file_url, '_blank');
+
+                wrapper.appendChild(img);
             }
 
             if (msg.file_type === 'video') {
@@ -119,33 +166,48 @@ class HaChatCard extends HTMLElement {
                 video.src = msg.file_url;
                 video.controls = true;
                 video.style.maxWidth = '220px';
-                bubble.appendChild(video);
+
+                video.onclick = () => window.open(msg.file_url, '_blank');
+
+                wrapper.appendChild(video);
             }
 
             if (msg.file_type === 'file') {
-                const link = document.createElement('a');
-                link.href = msg.file_url;
-                link.textContent = msg.file_name || "Download file";
-                link.target = '_blank';
-                bubble.appendChild(link);
+                const a = document.createElement('a');
+                a.href = msg.file_url;
+                a.target = '_blank';
+                a.textContent = msg.file_name || 'download file';
+                wrapper.appendChild(a);
             }
 
-            div.appendChild(bubble);
-            box.appendChild(div);
-        });
+            bubble.appendChild(wrapper);
+        }
 
-        this.scrollToBottom(forceScroll);
+        div.appendChild(bubble);
+        box.appendChild(div);
+
+        if (shouldScroll && this._autoScroll) {
+            this.scrollToBottom();
+        }
     }
 
+    // =========================
+    // STABLE SCROLL 
+    // =========================
     scrollToBottom(force = false) {
         const box = this.shadowRoot.querySelector('#chat-box');
         if (!box) return;
+
+        if (!force && !this._autoScroll) return;
 
         requestAnimationFrame(() => {
             box.scrollTop = box.scrollHeight;
         });
     }
 
+    // =========================
+    // UI
+    // =========================
     render() {
         this.shadowRoot.innerHTML = `
         <style>
@@ -178,6 +240,12 @@ class HaChatCard extends HTMLElement {
         .me .bubble {
             background:#03a9f4;
             color:white;
+        }
+
+        .meta {
+            font-size:11px;
+            opacity:0.7;
+            margin-bottom:3px;
         }
 
         #input-area {
@@ -226,33 +294,40 @@ class HaChatCard extends HTMLElement {
         </div>
         `;
 
+        const box = this.shadowRoot.querySelector('#chat-box');
         const fileInput = this.shadowRoot.querySelector('#file-input');
+        const input = this.shadowRoot.querySelector('#msg-input');
 
+        // attach
         this.shadowRoot.querySelector('#attach-btn')
-            .addEventListener('click', () => fileInput.click());
+            .onclick = () => fileInput.click();
 
-        fileInput.addEventListener('change', () => {
+        fileInput.onchange = () => {
             const file = fileInput.files[0];
             if (file) {
                 this.sendMessage(file);
                 fileInput.value = '';
             }
+        };
+
+        // send button
+        this.shadowRoot.querySelector('#send-btn')
+            .onclick = () => this.sendMessage();
+
+        // ENTER FIX
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendMessage();
+            }
         });
 
-        this.shadowRoot.querySelector('#send-btn')
-            .addEventListener('click', () => this.sendMessage());
-
-        this.shadowRoot.querySelector('#msg-input')
-            .addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') this.sendMessage();
-            });
-
-        const box = this.shadowRoot.querySelector('#chat-box');
+        // AUTO SCROLL DETECT
         box.addEventListener('scroll', () => {
-            const isBottom =
-                box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+            const bottom =
+                box.scrollHeight - box.scrollTop - box.clientHeight < 120;
 
-            this._autoScroll = isBottom;
+            this._autoScroll = bottom;
         });
     }
 

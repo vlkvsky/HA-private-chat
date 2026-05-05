@@ -14,3 +14,7 @@ get_history:
 clear_chat:
   name: Clear Chat
   description: Deletes all messages
+
+clear_data:
+  name: Clear local files
+  description: Deletes all files

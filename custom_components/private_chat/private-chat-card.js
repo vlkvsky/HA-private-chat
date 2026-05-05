@@ -1,4 +1,4 @@
-console.info("PRIVATE CHAT FINAL STABLE MOBILE");
+console.info("PRIVATE CHAT TELEGRAM STYLE UI");
 
 class HaChatCard extends HTMLElement {
     constructor() {
@@ -23,16 +23,10 @@ class HaChatCard extends HTMLElement {
         this.currentUserId = hass.user?.id;
     }
 
-    // =========================
-    // HISTORY
-    // =========================
     loadHistory() {
         this._hass.callService('private_chat', 'get_history', {});
     }
 
-    // =========================
-    // EVENTS
-    // =========================
     subscribe() {
         this._hass.connection.subscribeEvents((event) => {
             const msg = event.data?.message;
@@ -49,12 +43,10 @@ class HaChatCard extends HTMLElement {
 
             this.messages = msgs;
             this.renderFull();
+
         }, 'private_chat_history');
     }
 
-    // =========================
-    // SEND
-    // =========================
     sendMessage(file = null) {
         const input = this.shadowRoot.querySelector('#msg-input');
         const text = input.value.trim();
@@ -89,9 +81,6 @@ class HaChatCard extends HTMLElement {
         input.value = '';
     }
 
-    // =========================
-    // RENDER FULL
-    // =========================
     renderFull() {
         const box = this.shadowRoot.querySelector('#chat-box');
         box.innerHTML = '';
@@ -100,35 +89,26 @@ class HaChatCard extends HTMLElement {
         this.scrollToBottom(true);
     }
 
-    // =========================
-    // APPEND MESSAGE
-    // =========================
     appendMessage(msg, scroll = true) {
         const box = this.shadowRoot.querySelector('#chat-box');
 
         const isMe = msg.user_id === this.currentUserId;
 
-        const div = document.createElement('div');
-        div.className = `msg ${isMe ? 'me' : 'other'}`;
+        const row = document.createElement('div');
+        row.className = `row ${isMe ? 'me' : 'other'}`;
 
         const bubble = document.createElement('div');
-        bubble.className = 'bubble';
+        bubble.className = `bubble ${isMe ? 'me-bubble' : 'other-bubble'}`;
 
-        const meta = document.createElement('div');
-        meta.className = 'meta';
-
-        const time = new Date(msg.timestamp * 1000)
-            .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-        meta.textContent = `${msg.user} ${time}`;
-        bubble.appendChild(meta);
-
+        // текст
         if (msg.message) {
-            const t = document.createElement('div');
-            t.textContent = msg.message;
-            bubble.appendChild(t);
+            const text = document.createElement('div');
+            text.className = 'text';
+            text.textContent = msg.message;
+            bubble.appendChild(text);
         }
 
+        // media
         if (msg.file_url) {
             if (msg.file_type === 'image') {
                 const img = document.createElement('img');
@@ -149,22 +129,31 @@ class HaChatCard extends HTMLElement {
                 const a = document.createElement('a');
                 a.href = msg.file_url;
                 a.target = "_blank";
+                a.className = 'file';
                 a.textContent = msg.file_name;
                 bubble.appendChild(a);
             }
         }
 
-        div.appendChild(bubble);
-        box.appendChild(div);
+        // meta
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+
+        const time = new Date(msg.timestamp * 1000)
+            .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        meta.textContent = msg.user + " · " + time;
+
+        bubble.appendChild(meta);
+
+        row.appendChild(bubble);
+        box.appendChild(row);
 
         if (scroll && this._autoScroll) {
             this.scrollToBottom();
         }
     }
 
-    // =========================
-    // SCROLL
-    // =========================
     scrollToBottom(force = false) {
         const box = this.shadowRoot.querySelector('#chat-box');
 
@@ -177,9 +166,6 @@ class HaChatCard extends HTMLElement {
         });
     }
 
-    // =========================
-    // UI
-    // =========================
     render() {
         this.shadowRoot.innerHTML = `
         <style>
@@ -187,13 +173,11 @@ class HaChatCard extends HTMLElement {
         :host {
             position: fixed;
             inset: 0;
-            overflow: hidden;
-            overscroll-behavior: none;
-            touch-action: none;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial;
         }
 
         #container {
-            height: 100dvh;
+            height: 100vh;
             display: flex;
             flex-direction: column;
             background: var(--lovelace-background);
@@ -202,67 +186,125 @@ class HaChatCard extends HTMLElement {
         #chat-box {
             flex: 1;
             overflow-y: auto;
-            padding: 10px;
+            padding: 12px;
             display: flex;
             flex-direction: column;
-            gap: 8px;
-
-            overscroll-behavior: contain;
-            -webkit-overflow-scrolling: touch;
-            touch-action: pan-y;
+            gap: 6px;
         }
 
-        .msg { max-width: 75%; }
-        .me { align-self: flex-end; }
-        .other { align-self: flex-start; }
+        /* ROW */
+        .row {
+            display: flex;
+            width: 100%;
+        }
 
+        .me {
+            justify-content: flex-end;
+        }
+
+        .other {
+            justify-content: flex-start;
+        }
+
+        /* BUBBLE */
         .bubble {
-            padding: 10px;
-            border-radius: 12px;
-            background: #e5e5e5;
+            max-width: 75%;
+            padding: 8px 12px;
+            border-radius: 16px;
+            font-size: 14px;
+            line-height: 1.35;
+            word-break: break-word;
         }
 
-        .me .bubble {
+        .me-bubble {
             background: #03a9f4;
             color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .other-bubble {
+            background: #1e1e1e;
+            color: #eaeaea;
+            border-bottom-left-radius: 4px;
+        }
+
+        .text {
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .meta {
+            font-size: 11px;
+            opacity: 0.6;
+            margin-top: 4px;
         }
 
         .media {
-            max-width: 220px;
-            max-height: 160px;
-            border-radius: 10px;
+            width: 220px;
+            height: 160px;
+            border-radius: 12px;
+            margin-top: 6px;
             display: block;
+            object-fit: cover; 
+            background: #000;
+        }
+        
+        video.media {
+            width: 220px;
+            height: 160px;
+            border-radius: 12px;
+            object-fit: cover;
+            background: #000;
+        }
+        
+        img.media {
+            width: 220px;
+            height: 160px;
+            border-radius: 1px;
+            object-fit: cover;
+            background: #000;
         }
 
+        .file {
+            display: block;
+            margin-top: 6px;
+            color: #4ea4ff;
+            font-size: 13px;
+        }
+
+        /* INPUT */
         #input-area {
             display: flex;
-            padding: 10px;
             gap: 8px;
-            border-top: 1px solid #ccc;
-            background: var(--card-background-color);
-
-            touch-action: manipulation;
+            padding: 10px;
+            background: #151515;
+            border-top: 1px solid #222;
         }
 
         #msg-input {
             flex: 1;
-            padding: 10px;
-            border-radius: 20px;
-            border: 1px solid #ccc;
+            border-radius: 18px;
+            border: none;
+            padding: 10px 12px;
+            background: #222;
+            color: white;
+            outline: none;
+            font-size: 14px;
         }
 
         #send-btn {
             background: #03a9f4;
             color: white;
             border: none;
-            border-radius: 20px;
-            padding: 10px 16px;
+            border-radius: 18px;
+            padding: 8px 14px;
         }
 
         #attach-btn {
             background: none;
             border: none;
-            font-size: 22px;
+            font-size: 20px;
+            color: white;
         }
 
         </style>
@@ -280,10 +322,7 @@ class HaChatCard extends HTMLElement {
         `;
 
         const fileInput = this.shadowRoot.querySelector('#file-input');
-        const input = this.shadowRoot.querySelector('#msg-input');
-        const box = this.shadowRoot.querySelector('#chat-box');
 
-        // attach
         this.shadowRoot.querySelector('#attach-btn')
             .onclick = () => fileInput.click();
 
@@ -295,31 +334,25 @@ class HaChatCard extends HTMLElement {
             }
         };
 
-        // send
         this.shadowRoot.querySelector('#send-btn')
             .onclick = () => this.sendMessage();
 
-        // ENTER FIX
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                this.sendMessage();
-            }
-        });
+        this.shadowRoot.querySelector('#msg-input')
+            .addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.sendMessage();
+                }
+            });
 
-        // scroll tracking
+        const box = this.shadowRoot.querySelector('#chat-box');
+
         box.addEventListener('scroll', () => {
             const nearBottom =
                 box.scrollHeight - box.scrollTop - box.clientHeight < 80;
 
             this._autoScroll = nearBottom;
         });
-
-        this.shadowRoot.addEventListener('touchmove', (e) => {
-            if (!box.contains(e.target)) {
-                e.preventDefault();
-            }
-        }, { passive: false });
     }
 
     setConfig() {}

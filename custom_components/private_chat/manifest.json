@@ -1,7 +1,7 @@
 {
   "domain": "private_chat",
   "name": "Private Chat",
-  "version": "4.1",
+  "version": "4.2",
   "documentation": "https://github.com/vlkvsky/HA-private-chat",
   "config_flow": true,
   "requirements": [],

@@ -1,4 +1,4 @@
-console.info("PRIVATE CHAT CARD LOADED v2");
+console.info("PRIVATE CHAT CARD LOADED v3");
 
 class HaChatCard extends HTMLElement {
     constructor() {
@@ -192,13 +192,7 @@ class HaChatCard extends HTMLElement {
             flex:1;
             padding:10px;
             border-radius:8px;
-        }
-
-        #attach-btn {
-            font-size:22px;
-            cursor:pointer;
-            background:none;
-            border:none;
+            border:1px solid #ccc;
         }
 
         #send-btn {
@@ -207,6 +201,16 @@ class HaChatCard extends HTMLElement {
             border:none;
             border-radius:8px;
             padding:8px 16px;
+            cursor:pointer;
+        }
+
+        #attach-btn {
+            background:#eee;
+            border:none;
+            border-radius:8px;
+            padding:8px 12px;
+            cursor:pointer;
+            font-size:18px;
         }
 
         #file-input {
@@ -218,9 +222,9 @@ class HaChatCard extends HTMLElement {
             <div id="chat-box"></div>
 
             <div id="input-area">
-                <button id="attach-btn">📎</button>
                 <input id="msg-input" placeholder="Message..." />
                 <button id="send-btn">Send</button>
+                <button id="attach-btn">📎</button>
                 <input type="file" id="file-input">
             </div>
         </div>
@@ -228,6 +232,7 @@ class HaChatCard extends HTMLElement {
 
         const fileInput = this.shadowRoot.querySelector('#file-input');
 
+        // 📎 attach
         this.shadowRoot.querySelector('#attach-btn')
             .addEventListener('click', () => fileInput.click());
 
@@ -239,9 +244,11 @@ class HaChatCard extends HTMLElement {
             }
         });
 
+        // send
         this.shadowRoot.querySelector('#send-btn')
             .addEventListener('click', () => this.sendMessage());
 
+        // enter
         this.shadowRoot.querySelector('#msg-input')
             .addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') this.sendMessage();

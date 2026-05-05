@@ -1,4 +1,4 @@
-console.info("PRIVATE CHAT CARD LOADED v2");
+console.info("PRIVATE CHAT CARD");
 
 class HaChatCard extends HTMLElement {
     constructor() {
@@ -152,7 +152,7 @@ class HaChatCard extends HTMLElement {
         #chat-container {
             display:flex;
             flex-direction:column;
-            height:740px;
+            height:700px;
             padding:10px;
             box-sizing:border-box;
         }

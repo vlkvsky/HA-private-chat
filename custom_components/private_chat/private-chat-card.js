@@ -76,8 +76,24 @@ class HaChatCard extends HTMLElement {
         input.value = '';
     }
 
+    scrollToBottom(force = false) {
+        const box = this.shadowRoot.querySelector('#chat-box');
+        if (!box) return;
+
+        const isNearBottom =
+            box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+
+        if (force || this._autoScroll || isNearBottom) {
+            requestAnimationFrame(() => {
+                box.scrollTop = box.scrollHeight;
+            });
+        }
+    }
+
     refreshChat(forceScroll = false) {
         const box = this.shadowRoot.querySelector('#chat-box');
+        if (!box) return;
+
         box.innerHTML = '';
 
         this.messages.forEach(msg => {
@@ -91,12 +107,16 @@ class HaChatCard extends HTMLElement {
 
             const meta = document.createElement('div');
             meta.className = 'meta';
-            meta.textContent = `${msg.user}`;
 
+            const time = new Date(msg.timestamp * 1000)
+                .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            meta.textContent = `${msg.user} ${time}`;
             bubble.appendChild(meta);
 
             if (msg.message) {
                 const text = document.createElement('div');
+                text.className = 'text';
                 text.textContent = msg.message;
                 bubble.appendChild(text);
             }
@@ -105,7 +125,7 @@ class HaChatCard extends HTMLElement {
             if (msg.file_type === 'image') {
                 const img = document.createElement('img');
                 img.src = msg.file_url;
-                img.style.maxWidth = '200px';
+                img.style.maxWidth = '220px';
                 img.style.borderRadius = '10px';
                 bubble.appendChild(img);
             }
@@ -115,7 +135,7 @@ class HaChatCard extends HTMLElement {
                 const video = document.createElement('video');
                 video.src = msg.file_url;
                 video.controls = true;
-                video.style.maxWidth = '200px';
+                video.style.maxWidth = '220px';
                 bubble.appendChild(video);
             }
 
@@ -123,7 +143,7 @@ class HaChatCard extends HTMLElement {
             if (msg.file_type === 'file') {
                 const link = document.createElement('a');
                 link.href = msg.file_url;
-                link.textContent = msg.file_name;
+                link.textContent = msg.file_name || "Download file";
                 link.target = '_blank';
                 bubble.appendChild(link);
             }
@@ -135,43 +155,142 @@ class HaChatCard extends HTMLElement {
         this.scrollToBottom(forceScroll);
     }
 
-    scrollToBottom(force = false) {
-        const box = this.shadowRoot.querySelector('#chat-box');
-        if (force || this._autoScroll) {
-            requestAnimationFrame(() => {
-                box.scrollTop = box.scrollHeight;
-            });
-        }
-    }
-
     render() {
         this.shadowRoot.innerHTML = `
         <style>
-        #chat-container { height:740px; display:flex; flex-direction:column; }
-        #chat-box { flex:1; overflow:auto; display:flex; flex-direction:column; gap:8px; }
-        .msg { max-width:75%; }
+        :host { display:block; }
+
+        #chat-container {
+            display:flex;
+            flex-direction:column;
+            height:740px;
+            padding:10px;
+            box-sizing:border-box;
+        }
+
+        #chat-box {
+            flex:1;
+            overflow-y:auto;
+            display:flex;
+            flex-direction:column;
+            gap:8px;
+        }
+
+        .msg { max-width:75%; display:flex; flex-direction:column; }
         .me { align-self:flex-end; }
         .other { align-self:flex-start; }
-        .bubble { padding:10px; border-radius:12px; background:#eee; }
-        .me .bubble { background:#03a9f4; color:white; }
+
+        .bubble {
+            padding:10px;
+            border-radius:12px;
+            background:var(--secondary-background-color,#e5e5e5);
+            color:var(--primary-text-color,#000);
+        }
+
+        .me .bubble {
+            background:var(--primary-color,#03a9f4);
+            color:white;
+        }
+
+        .meta {
+            font-size:11px;
+            opacity:0.7;
+            margin-bottom:3px;
+        }
+
+        .text {
+            word-break: break-word;
+        }
+
+        #input-area {
+            display:flex;
+            gap:8px;
+            border-top:1px solid var(--divider-color,#ccc);
+            padding-top:10px;
+            align-items:center;
+        }
+
+        #msg-input {
+            flex:1;
+            padding:10px;
+            border-radius:8px;
+            border:1px solid var(--divider-color,#ccc);
+            background:var(--card-background-color,#fff);
+            color:var(--primary-text-color,#000);
+        }
+
+        button {
+            border:none;
+            border-radius:8px;
+            cursor:pointer;
+            padding:8px 12px;
+            font-size:16px;
+        }
+
+        #attach-btn {
+            background:transparent;
+            font-size:20px;
+        }
+
+        #send-btn {
+            background:var(--primary-color,#03a9f4);
+            color:white;
+        }
+
+        #file-input {
+            display:none;
+        }
         </style>
 
         <div id="chat-container">
             <div id="chat-box"></div>
-            <input id="msg-input">
-            <input type="file" id="file-input">
-            <button id="send-btn">Send</button>
+
+            <div id="input-area">
+                <button id="attach-btn">📎</button>
+                <input id="msg-input" type="text" placeholder="Message..." />
+                <button id="send-btn">Send</button>
+                <input type="file" id="file-input" />
+            </div>
         </div>
         `;
 
         const fileInput = this.shadowRoot.querySelector('#file-input');
 
-        this.shadowRoot.querySelector('#send-btn')
-            .addEventListener('click', () => {
-                this.sendMessage(fileInput.files[0]);
+        // 📎 открыть выбор файла
+        this.shadowRoot.querySelector('#attach-btn')
+            .addEventListener('click', () => fileInput.click());
+
+        // 📁 выбор файла
+        fileInput.addEventListener('change', () => {
+            const file = fileInput.files[0];
+            if (file) {
+                this.sendMessage(file);
                 fileInput.value = '';
+            }
+        });
+
+        // 📤 кнопка отправки
+        this.shadowRoot.querySelector('#send-btn')
+            .addEventListener('click', () => this.sendMessage());
+
+        // ⌨ Enter
+        this.shadowRoot.querySelector('#msg-input')
+            .addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') this.sendMessage();
             });
+
+        // scroll tracking
+        const box = this.shadowRoot.querySelector('#chat-box');
+        box.addEventListener('scroll', () => {
+            const isBottom =
+                box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+
+            this._autoScroll = isBottom;
+        });
     }
+
+    setConfig() {}
+    getCardSize() { return 6; }
 }
 
 customElements.define('private-chat-card', HaChatCard);

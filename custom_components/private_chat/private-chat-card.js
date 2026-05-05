@@ -1,4 +1,4 @@
-console.info("PRIVATE CHAT TELEGRAM STYLE UI");
+console.info("PRIVATE CHAT");
 
 class HaChatCard extends HTMLElement {
     constructor() {
@@ -190,6 +190,7 @@ class HaChatCard extends HTMLElement {
             display: flex;
             flex-direction: column;
             gap: 6px;
+            padding-top: calc(12px + env(safe-area-inset-top) + 56px);
         }
 
         /* ROW */

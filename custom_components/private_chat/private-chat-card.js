@@ -10,6 +10,46 @@ class HaChatCard extends HTMLElement {
         this._autoScroll = true;
     }
 
+    connectedCallback() {
+        this._updateOffset = this._updateOffset.bind(this);
+        window.addEventListener('resize', this._updateOffset);
+        this._observeSidebar();
+    }
+
+    disconnectedCallback() {
+        window.removeEventListener('resize', this._updateOffset);
+        this._sidebarObserver?.disconnect();
+    }
+
+    _getSidebarEl() {
+        try {
+            const ha = document.querySelector('home-assistant');
+            const main = ha?.shadowRoot?.querySelector('home-assistant-main');
+            const drawer = main?.shadowRoot?.querySelector('ha-drawer');
+            return drawer?.querySelector('ha-sidebar') || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    _observeSidebar() {
+        const sidebar = this._getSidebarEl();
+        if (!sidebar) {
+            // DOM ще не готовий — пробуємо ще раз трохи пізніше
+            setTimeout(() => this._observeSidebar(), 500);
+            return;
+        }
+        this._sidebarObserver = new ResizeObserver(() => this._updateOffset());
+        this._sidebarObserver.observe(sidebar);
+        this._updateOffset();
+    }
+
+    _updateOffset() {
+        const sidebar = this._getSidebarEl();
+        const width = sidebar ? sidebar.getBoundingClientRect().width : 0;
+        this.style.setProperty('--sidebar-offset', width + 'px');
+    }
+
     set hass(hass) {
         this._hass = hass;
 
@@ -172,7 +212,11 @@ class HaChatCard extends HTMLElement {
 
         :host {
             position: fixed;
-            inset: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: var(--sidebar-offset, 0px);
+            transition: left 0.2s ease;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial;
         }
 

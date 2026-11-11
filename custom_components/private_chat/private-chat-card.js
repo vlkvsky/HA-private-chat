@@ -26,7 +26,7 @@ class HaChatCard extends HTMLElement {
         this._sendPresence(document.visibilityState === 'visible');
         this._presenceTimer = setInterval(() => {
             if (document.visibilityState === 'visible') this._sendPresence(true);
-        }, 30000);
+        }, 15000);
     }
 
     _stopPresence() {
@@ -274,6 +274,7 @@ class HaChatCard extends HTMLElement {
 
         #container {
             height: 100%;
+            overscroll-behavior: none;
             display: flex;
             flex-direction: column;
             background: var(--lovelace-background);
@@ -282,6 +283,8 @@ class HaChatCard extends HTMLElement {
         #chat-box {
             flex: 1;
             overflow-y: auto;
+            overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
             padding: 12px;
             display: flex;
             flex-direction: column;
@@ -449,6 +452,21 @@ class HaChatCard extends HTMLElement {
             });
 
         const box = this.shadowRoot.querySelector('#chat-box');
+
+        // не даємо прокручувати сторінку Lovelace під чатом
+        this.shadowRoot.querySelector('#container')
+            .addEventListener('touchmove', (e) => {
+                const path = e.composedPath();
+                if (!path.includes(box)) {
+                    e.preventDefault();
+                    return;
+                }
+                const atTop = box.scrollTop <= 0;
+                const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 1;
+                if (box.scrollHeight <= box.clientHeight || (atTop && atBottom)) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
 
         box.addEventListener('scroll', () => {
             const nearBottom =

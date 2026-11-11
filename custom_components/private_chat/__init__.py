@@ -81,7 +81,8 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["messages"] = messages
-    hass.data[DOMAIN]["presence"] = {}
+    hass.data[DOMAIN]["presence"] = {}        # (user_id, id(connection)) -> last seen
+    hass.data[DOMAIN]["tracked_conns"] = set()
 
     _LOGGER.info(f"[private_chat] loaded {len(messages)} messages")
 
@@ -102,9 +103,9 @@ async def async_setup_entry(hass: HomeAssistant, entry):
     def online_user_ids():
         now = time.time()
         presence = hass.data[DOMAIN]["presence"]
-        for uid in [u for u, ts in presence.items() if now - ts > PRESENCE_TIMEOUT]:
-            presence.pop(uid, None)
-        return list(presence.keys())
+        for key in [k for k, ts in presence.items() if now - ts > PRESENCE_TIMEOUT]:
+            presence.pop(key, None)
+        return sorted({key[0] for key in presence})
 
     @websocket_api.websocket_command({
         vol.Required("type"): WS_PRESENCE,
@@ -115,10 +116,23 @@ async def async_setup_entry(hass: HomeAssistant, entry):
         uid = connection.user.id if connection.user else None
         if uid:
             presence = hass.data[DOMAIN]["presence"]
+            tracked = hass.data[DOMAIN]["tracked_conns"]
+            key = (uid, id(connection))
             if msg["active"]:
-                presence[uid] = time.time()
+                presence[key] = time.time()
+                if key not in tracked:
+                    tracked.add(key)
+
+                    @callback
+                    def _on_close():
+                        # з'єднання застосунку з HA закрилось (iOS приспав застосунок,
+                        # пропала мережа) — одразу знімаємо відмітку присутності
+                        presence.pop(key, None)
+                        tracked.discard(key)
+
+                    connection.subscriptions[msg["id"]] = _on_close
             else:
-                presence.pop(uid, None)
+                presence.pop(key, None)
         connection.send_result(msg["id"])
 
     if not hass.data[DOMAIN].get("ws_registered"):

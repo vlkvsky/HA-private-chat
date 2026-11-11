@@ -8,15 +8,45 @@ class HaChatCard extends HTMLElement {
         this.messages = [];
         this._ready = false;
         this._autoScroll = true;
+        this._presenceTimer = null;
+        this._onVisibility = () => this._sendPresence(document.visibilityState === 'visible');
+    }
+
+    // =========================
+    // PRESENCE: «я зараз у чаті»
+    // =========================
+    _sendPresence(active) {
+        if (!this._hass) return;
+        this._hass.callWS({ type: 'private_chat/presence', active }).catch(() => {});
+    }
+
+    _startPresence() {
+        if (this._presenceTimer) return;
+        document.addEventListener('visibilitychange', this._onVisibility);
+        this._sendPresence(document.visibilityState === 'visible');
+        this._presenceTimer = setInterval(() => {
+            if (document.visibilityState === 'visible') this._sendPresence(true);
+        }, 30000);
+    }
+
+    _stopPresence() {
+        document.removeEventListener('visibilitychange', this._onVisibility);
+        if (this._presenceTimer) {
+            clearInterval(this._presenceTimer);
+            this._presenceTimer = null;
+        }
+        this._sendPresence(false);
     }
 
     connectedCallback() {
+        if (this._ready) this._startPresence();
         this._updateOffset = this._updateOffset.bind(this);
         window.addEventListener('resize', this._updateOffset);
         this._observeSidebar();
     }
 
     disconnectedCallback() {
+        this._stopPresence();
         window.removeEventListener('resize', this._updateOffset);
         this._sidebarObserver?.disconnect();
     }
@@ -57,6 +87,7 @@ class HaChatCard extends HTMLElement {
             this._ready = true;
             this.render();
             this.subscribe();
+            this._startPresence();
             this.loadHistory();
         }
 

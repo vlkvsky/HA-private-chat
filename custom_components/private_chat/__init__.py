@@ -3,7 +3,10 @@ import time
 import asyncio
 import logging
 
-from homeassistant.core import HomeAssistant, ServiceCall
+import voluptuous as vol
+
+from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.components import websocket_api
 from homeassistant.helpers.storage import Store
 from homeassistant.components.http import HomeAssistantView
 
@@ -78,6 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN]["messages"] = messages
+    hass.data[DOMAIN]["presence"] = {}
 
     _LOGGER.info(f"[private_chat] loaded {len(messages)} messages")
 
@@ -91,6 +95,35 @@ async def async_setup_entry(hass: HomeAssistant, entry):
         await store.async_save({
             "messages": hass.data[DOMAIN]["messages"]
         })
+
+    # =========================
+    # PRESENCE (хто зараз дивиться чат)
+    # =========================
+    def online_user_ids():
+        now = time.time()
+        presence = hass.data[DOMAIN]["presence"]
+        for uid in [u for u, ts in presence.items() if now - ts > PRESENCE_TIMEOUT]:
+            presence.pop(uid, None)
+        return list(presence.keys())
+
+    @websocket_api.websocket_command({
+        vol.Required("type"): WS_PRESENCE,
+        vol.Required("active"): bool,
+    })
+    @callback
+    def ws_presence(hass_, connection, msg):
+        uid = connection.user.id if connection.user else None
+        if uid:
+            presence = hass.data[DOMAIN]["presence"]
+            if msg["active"]:
+                presence[uid] = time.time()
+            else:
+                presence.pop(uid, None)
+        connection.send_result(msg["id"])
+
+    if not hass.data[DOMAIN].get("ws_registered"):
+        websocket_api.async_register_command(hass, ws_presence)
+        hass.data[DOMAIN]["ws_registered"] = True
 
     # =========================
     # SEND MESSAGE
@@ -126,7 +159,7 @@ async def async_setup_entry(hass: HomeAssistant, entry):
 
         hass.bus.async_fire(
             EVENT_NEW_MESSAGE,
-            {"message": msg},
+            {"message": msg, "online_user_ids": online_user_ids()},
             context=call.context
         )
 

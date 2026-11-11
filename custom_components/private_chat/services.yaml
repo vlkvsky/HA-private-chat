@@ -1,20 +1,45 @@
 send_message:
   name: Send Message
-  description: Sends a chat message
+  description: Sends a chat message (text and/or attached file)
   fields:
     message:
-      required: true
+      name: Message
+      description: Message text
+      required: false
+      selector:
+        text:
+          multiline: true
+    file_url:
+      name: File URL
+      description: URL of an uploaded file (returned by /api/private_chat/upload)
+      required: false
+      selector:
+        text:
+    file_type:
+      name: File type
+      description: image, video or file
+      required: false
+      selector:
+        select:
+          options:
+            - image
+            - video
+            - file
+    file_name:
+      name: File name
+      description: Original file name
+      required: false
       selector:
         text:
 
 get_history:
   name: Get History
-  description: Load chat history
+  description: Load chat history (fires private_chat_history event)
 
 clear_chat:
   name: Clear Chat
   description: Deletes all messages
 
-clear_data:
-  name: Clear local files
-  description: Deletes all files
+clear_uploads:
+  name: Clear uploaded files
+  description: Deletes all files in www/private_chat

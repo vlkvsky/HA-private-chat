@@ -11,3 +11,7 @@ MAX_HISTORY = 20000
 
 STORAGE_KEY = "private_chat_history"
 STORAGE_VERSION = 1
+
+# presence: користувач вважається «в чаті», якщо картка надсилала відмітку не пізніше N секунд тому
+PRESENCE_TIMEOUT = 75
+WS_PRESENCE = f"{DOMAIN}/presence"

@@ -43,12 +43,33 @@ class HaChatCard extends HTMLElement {
         this._updateOffset = this._updateOffset.bind(this);
         window.addEventListener('resize', this._updateOffset);
         this._observeSidebar();
+
+        // iOS/Android: коли з'являється клавіатура, підганяємо висоту під видиму область,
+        // щоб останні повідомлення не ховалися під верхній край екрана
+        this._onViewport = this._onViewport || (() => this._fitViewport());
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', this._onViewport);
+            window.visualViewport.addEventListener('scroll', this._onViewport);
+        }
+        this._fitViewport();
+    }
+
+    _fitViewport() {
+        const vv = window.visualViewport;
+        if (!vv) return;
+        this.style.setProperty('--vv-height', vv.height + 'px');
+        this.style.setProperty('--vv-top', vv.offsetTop + 'px');
+        if (this._ready && this._autoScroll) this.scrollToBottom(true);
     }
 
     disconnectedCallback() {
         this._stopPresence();
         window.removeEventListener('resize', this._updateOffset);
         this._sidebarObserver?.disconnect();
+        if (window.visualViewport && this._onViewport) {
+            window.visualViewport.removeEventListener('resize', this._onViewport);
+            window.visualViewport.removeEventListener('scroll', this._onViewport);
+        }
     }
 
     _getSidebarEl() {
@@ -243,16 +264,16 @@ class HaChatCard extends HTMLElement {
 
         :host {
             position: fixed;
-            top: 0;
+            top: var(--vv-top, 0px);
             right: 0;
-            bottom: 0;
+            height: var(--vv-height, 100vh);
             left: var(--sidebar-offset, 0px);
             transition: left 0.2s ease;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial;
         }
 
         #container {
-            height: 100vh;
+            height: 100%;
             display: flex;
             flex-direction: column;
             background: var(--lovelace-background);
@@ -412,6 +433,12 @@ class HaChatCard extends HTMLElement {
 
         this.shadowRoot.querySelector('#send-btn')
             .onclick = () => this.sendMessage();
+
+        this.shadowRoot.querySelector('#msg-input')
+            .addEventListener('focus', () => {
+                this._autoScroll = true;
+                setTimeout(() => this._fitViewport(), 300);
+            });
 
         this.shadowRoot.querySelector('#msg-input')
             .addEventListener('keydown', (e) => {
